@@ -1,1 +1,1 @@
-chromium --remote-debugging-port=9222 --user-data-dir=/tmp/rod-profile "https://web.whatsapp.com"
+chromium --remote-debugging-port=9222 --user-data-dir=/home/username/.whatsapp_profile --window-size=912,1368 --disable-gpu --no-sandbox "https://web.whatsapp.com"
