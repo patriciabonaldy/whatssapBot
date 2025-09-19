@@ -17,7 +17,7 @@ func main() {
 
 	page := browser.MustPage("https://web.whatsapp.com")
 	time.Sleep(5 * time.Second)
-	//page.MustSetViewport(912, 1368, 1, true)
+	page.MustSetViewport(912, 1368, 1, true)
 	// wait to get the page completed
 	page = page.MustWaitStable()
 
@@ -46,7 +46,7 @@ func main() {
 
 	c := cron.New()
 	// Every Monday at 12:00 PM
-	_, err = c.AddFunc("00 11 * * 1", func() {
+	_, err = c.AddFunc("43 10 * * 1", func() {
 		sendScheduledMessage(page, msgCh, mutex)
 	})
 	if err != nil {
@@ -54,7 +54,7 @@ func main() {
 	}
 
 	// Every Friday at 12:00 PM we send the upcoming events
-	_, err = c.AddFunc("00 11 * * 5", func() {
+	_, err = c.AddFunc("00 17 * * 5", func() {
 		sendUpcomingEvents(page, msgCh, mutex)
 	})
 	if err != nil {

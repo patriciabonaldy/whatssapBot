@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"strconv"
 	"strings"
@@ -19,22 +18,42 @@ var (
 
 func checkChannel(page *rod.Page, channel string, msgCh chan message, mutex *sync.Mutex, duration time.Duration) {
 	for {
+		defer func() {
+			if err := recover(); err != nil {
+				log.Println("recovered in checkChannel:", err)
+			}
+		}()
 		time.Sleep(duration)
 		page = page.MustWaitStable()
-		openChat(page, channel)
-		announcements := listenToAnnouncements(getAnnouncements(page, channel))
-		messages := getMessages(page, channel)
-
-		if len(announcements) > 0 {
-			sendWelcomeMessage(msgCh, mutex, announcements, channel)
+		getAnnouncementsAndMessages := func(params ...any) any {
+			pg, ch := params[0].(*rod.Page), params[1].(string)
+			log.Printf("Listening to messages in the %s channel...\n", channel)
+			announcements := getAnnouncements(pg, ch)
+			messages := getMessages(page)
+			return []any{announcements, messages}
+		}
+		resp := Execute(page, channel, mutex, getAnnouncementsAndMessages, page, channel).([]any)
+		if len(resp) == 0 {
+			continue
 		}
 
-		if len(messages) > 0 {
-			checkScammers(msgCh, messages, channel)
+		if resp[0] != nil {
+			announcements := resp[0].([]string)
+			if len(announcements) > 0 {
+				sendWelcomeMessage(msgCh, mutex, announcements, channel)
+			}
 		}
 
-		if channel == mainGroup {
-			onboardingTrigger(msgCh, mutex, messages)
+		if resp[1] != nil {
+			messages := resp[1].(rod.Elements)
+
+			if len(messages) > 0 {
+				checkScammers(msgCh, messages, channel)
+			}
+
+			if channel == mainGroup {
+				onboardingTrigger(msgCh, mutex, messages)
+			}
 		}
 
 		time.Sleep(duration)
@@ -59,7 +78,7 @@ func sendWelcomeMessage(msgCh chan message, mutex *sync.Mutex, joiners []string,
 		msgCh <- message{
 			msgType:   welcomeMsg,
 			remittent: remittent,
-			message:   welcomeMessage,
+			message:   getWelcomeMessage(chatName),
 			chatName:  chatName,
 		}
 	}
@@ -94,8 +113,6 @@ func checkScammers(msgCh chan message, messages rod.Elements, chatName string) {
 }
 
 func sendScheduledMessage(page *rod.Page, msgCh chan message, mutex *sync.Mutex) {
-	// find the chat
-	openChat(page, mainGroup)
 	// send the message
 	go func() {
 		msg := message{
@@ -147,6 +164,8 @@ func sendUpcomingEvents(page *rod.Page, msgCh chan message, mutex *sync.Mutex) {
 }
 
 func onboardingTrigger(msgCh chan message, mutex *sync.Mutex, messages rod.Elements) {
+	mutex.Lock()
+	defer mutex.Unlock()
 	for _, msg := range messages {
 		msg.MustElements(`span.selectable-text`)
 		text := strings.ToLower(msg.MustText())
@@ -182,9 +201,7 @@ func onboardingTrigger(msgCh chan message, mutex *sync.Mutex, messages rod.Eleme
 				}(event)
 			}
 			wg.Wait()
-			mutex.Lock()
 			mapText[text] = true
-			mutex.Unlock()
 		}
 	}
 }
@@ -200,13 +217,16 @@ func sendMessage(page *rod.Page, msgCh chan message, mutex *sync.Mutex) {
 			}
 
 			if !isDryRun {
+				mutex.Lock()
+				// find the chat
+				openChat(page, msg.chatName)
 				switch msg.msgType {
 				case welcomeMsg:
-					// find the chat
-					openChat(page, msg.chatName)
 					inputBox := page.MustElement(`div[contenteditable="true"][data-tab="10"]`)
 					// Simulate a mention
-					inputBox.MustInput("Hi ")
+					if msg.chatName == mainGroup {
+						inputBox.MustInput("Hi ")
+					}
 					err = page.Keyboard.Type('@')
 					if err != nil {
 						log.Printf("error typing @: %v", err)
@@ -222,13 +242,13 @@ func sendMessage(page *rod.Page, msgCh chan message, mutex *sync.Mutex) {
 					inputBox.MustInput("\n ")
 					inputBox.MustInput(msg.message)
 					inputBox.MustInput("\n")
-					inputBox.MustInput(welcomeMessage2)
+					inputBox.MustInput(getWelcomeMessage2(msg.chatName))
 					inputBox.MustInput("\n")
-					inputBox.MustInput("Check upcoming walks sending a message with '/calendar' as text")
+					if msg.chatName == mainGroup {
+						inputBox.MustInput("Check upcoming walks sending a message with '/calendar' as text")
+					}
 					inputBox.MustType(input.Enter)
 				case proposeMsg:
-					// find the chat
-					openChat(page, msg.chatName)
 					inputBox := page.MustElement(`div[contenteditable="true"][data-tab="10"]`)
 					inputBox.MustInput(msg.message)
 					if msg.venue != "" {
@@ -244,8 +264,6 @@ func sendMessage(page *rod.Page, msgCh chan message, mutex *sync.Mutex) {
 					time.Sleep(3 * time.Second)
 					inputBox.MustType(input.Enter)
 				case warningMsg:
-					// find the chat
-					openChat(page, msg.chatName)
 					inputBox := page.MustElement(`div[contenteditable="true"][data-tab="10"]`)
 					inputBox.MustInput(msg.message)
 					inputBox.MustType(input.Enter)
@@ -269,9 +287,9 @@ func sendMessage(page *rod.Page, msgCh chan message, mutex *sync.Mutex) {
 					inputBox.MustInput("🚨🚨🚔🚔🚔🚔🚔🚨🚨")
 					inputBox.MustType(input.Enter)
 				}
+				mutex.Unlock()
 			}
 		default:
-			fmt.Println("nothing to do, waiting for a new message")
 		}
 	}
 }

@@ -2,11 +2,13 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-rod/rod"
@@ -37,6 +39,13 @@ func getWebSocketURL() string {
 
 	return data["webSocketDebuggerUrl"].(string)
 }
+func Execute(page *rod.Page, chatName string, mutex *sync.Mutex, callback func(...any) any, params ...any) any {
+	mutex.Lock()
+	defer mutex.Unlock()
+	openChat(page, chatName)
+	result := callback(params...)
+	return result
+}
 
 func openChat(page *rod.Page, chatName string) {
 	if chatName == communityGroup {
@@ -58,22 +67,22 @@ func openCommunityGroup(page *rod.Page) {
 	time.Sleep(10 * time.Second)
 }
 
-func getAnnouncements(page *rod.Page, channel string) rod.Elements {
-	openChat(page, channel)
+func getAnnouncements(params ...any) any {
+	page := params[0].(*rod.Page)
 	//get announcements
 	announcements := page.MustElements("div._amk4.false._amkb")
 	if len(announcements) == 0 {
 		return nil
 	}
-	if len(announcements) >= 10 {
-		announcements = announcements[:10]
+	if len(announcements) >= 3 {
+		announcements = announcements[:3]
 	}
 
-	return announcements
+	return listenToAnnouncements(announcements)
 }
 
-func getMessages(page *rod.Page, channel string) rod.Elements {
-	//get messages
+func getMessages(params ...any) any {
+	page := params[0].(*rod.Page)
 	messages := page.MustElements("div._amk4.false._amkd._amk5")
 	if len(messages) == 0 {
 		return nil
@@ -85,9 +94,13 @@ func getMessages(page *rod.Page, channel string) rod.Elements {
 	return messages
 }
 
-func listenToAnnouncements(elements rod.Elements) []string {
-	// find the chat
-	log.Println("Listening to messages in the announcements channel...")
+func listenToAnnouncements(params ...any) any {
+	remittent := make([]string, 0)
+	if params[0] == nil {
+		return remittent
+	}
+
+	elements := params[0].(rod.Elements)
 	joiners := make(map[string]struct{})
 
 	for _, announcement := range elements {
@@ -102,10 +115,25 @@ func listenToAnnouncements(elements rod.Elements) []string {
 		}
 	}
 
-	remittent := make([]string, 0)
 	for k := range joiners {
 		remittent = append(remittent, k)
 	}
 
 	return remittent
+}
+
+func getWelcomeMessage(chatName string) string {
+	if chatName == PortugueseGroup {
+		return "Bem-vindo ao grupo de Falemos em Portugues! 👋"
+	}
+
+	return fmt.Sprintf(welcomeMessage, chatName)
+}
+
+func getWelcomeMessage2(chatName string) string {
+	if chatName == PortugueseGroup {
+		return "Conta um pouco sobre você quando tiver um tempinho!"
+	}
+
+	return welcomeMessage2
 }
