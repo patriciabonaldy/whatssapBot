@@ -52,6 +52,7 @@ func checkChannel(page *rod.Page, channel string, msgCh chan message, mutex *syn
 			}
 
 			if channel == mainGroup {
+
 				onboardingTrigger(msgCh, mutex, messages)
 			}
 		}
