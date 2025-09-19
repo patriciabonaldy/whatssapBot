@@ -54,7 +54,7 @@ func main() {
 	}
 
 	// Every Friday at 12:00 PM we send the upcoming events
-	_, err = c.AddFunc("00 17 * * 5", func() {
+	_, err = c.AddFunc("40 17 * * 5", func() {
 		sendUpcomingEvents(page, msgCh, mutex)
 	})
 	if err != nil {

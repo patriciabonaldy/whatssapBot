@@ -128,6 +128,11 @@ func sendScheduledMessage(page *rod.Page, msgCh chan message, mutex *sync.Mutex)
 }
 
 func sendUpcomingEvents(page *rod.Page, msgCh chan message, mutex *sync.Mutex) {
+	events, err := getUpcomingEvents()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	var wg sync.WaitGroup
 	wg.Add(1)
 	// send the message
@@ -142,10 +147,6 @@ func sendUpcomingEvents(page *rod.Page, msgCh chan message, mutex *sync.Mutex) {
 	}()
 
 	sendMessage(page, msgCh, mutex)
-	events, err := getUpcomingEvents()
-	if err != nil {
-		log.Fatal(err)
-	}
 	wg.Add(len(events))
 
 	for _, event := range events {
