@@ -16,48 +16,55 @@ var (
 	mapText      = make(map[string]bool)
 )
 
-func checkChannel(page *rod.Page, channel string, msgCh chan message, mutex *sync.Mutex, duration time.Duration) {
+func run(duration time.Duration, task func(params ...any), params ...any) {
+	ticker := time.NewTicker(duration)
 	for {
-		defer func() {
-			if err := recover(); err != nil {
-				log.Println("recovered in checkChannel:", err)
-			}
-		}()
-		time.Sleep(duration)
-		page = page.MustWaitStable()
-		getAnnouncementsAndMessages := func(params ...any) any {
-			pg, ch := params[0].(*rod.Page), params[1].(string)
-			log.Printf("Listening to messages in the %s channel...\n", channel)
-			announcements := getAnnouncements(pg, ch)
-			messages := getMessages(page)
-			return []any{announcements, messages}
+		select {
+		case _ = <-ticker.C:
+			task(params...)
 		}
-		resp := Execute(page, channel, mutex, getAnnouncementsAndMessages, page, channel).([]any)
-		if len(resp) == 0 {
-			continue
+	}
+}
+
+func checkChannel(params ...any) {
+	page := params[0].(*rod.Page)
+	channel := params[1].(string)
+	msgCh := params[2].(chan message)
+	mutex := params[3].(*sync.Mutex)
+
+	defer func() {
+		if err := recover(); err != nil {
+			log.Println("recovered in checkChannel:", err)
 		}
+	}()
+	page = page.MustWaitStable()
+	getAnnouncementsAndMessages := func(params ...any) any {
+		pg, ch := params[0].(*rod.Page), params[1].(string)
+		log.Printf("Listening to messages in the %s channel...\n", channel)
+		announcements := getAnnouncements(pg, ch)
+		messages := getMessages(page)
+		return []any{announcements, messages}
+	}
+	resp := Execute(page, channel, mutex, getAnnouncementsAndMessages, page, channel).([]any)
+	if len(resp) == 0 {
+		return
+	}
 
-		if resp[0] != nil {
-			announcements := resp[0].([]string)
-			if len(announcements) > 0 {
-				sendWelcomeMessage(msgCh, mutex, announcements, channel)
-			}
+	if resp[0] != nil {
+		announcements := resp[0].([]string)
+		if len(announcements) > 0 {
+			sendWelcomeMessage(msgCh, mutex, announcements, channel)
 		}
+	}
 
-		if resp[1] != nil {
-			messages := resp[1].(rod.Elements)
-
-			if len(messages) > 0 {
-				checkScammers(msgCh, messages, channel)
-			}
-
+	if resp[1] != nil {
+		messages := resp[1].(rod.Elements)
+		if len(messages) > 0 {
+			checkScammers(msgCh, messages, channel)
 			if channel == mainGroup {
-
 				onboardingTrigger(msgCh, mutex, messages)
 			}
 		}
-
-		time.Sleep(duration)
 	}
 }
 
@@ -74,7 +81,6 @@ func sendWelcomeMessage(msgCh chan message, mutex *sync.Mutex, joiners []string,
 		if lastMessages[remittent] {
 			continue
 		}
-		log.Println("rem:", remittent)
 		lastMessages[remittent] = true
 		msgCh <- message{
 			msgType:   welcomeMsg,
@@ -102,13 +108,36 @@ func checkScammers(msgCh chan message, messages rod.Elements, chatName string) {
 			log.Println("text:", text)
 
 			//tags admins
-			admins := []string{"Inara", "Paula", "Princeso", "Fábio", "Julie AI thinknn"}
+			admins := []string{"Inara", "Paula", "Princeso", "Fábio", "Julie Ann"}
 			msgCh <- message{
 				msgType:  warningMsg,
 				admins:   admins,
 				message:  "This kind of message is not allowed on this group",
 				chatName: chatName,
 			}
+		}
+	}
+}
+
+func checkScammer(msgCh chan message, msg string, chatName string) {
+	if strings.Contains(msg, "stock") ||
+		strings.Contains(msg, "investment") ||
+		strings.Contains(msg, "crypto") ||
+		strings.Contains(msg, "forex") ||
+		strings.Contains(msg, "income") ||
+		strings.Contains(msg, "profit") ||
+		strings.Contains(msg, "trading") {
+
+		// send the message
+		log.Println("text:", msg)
+
+		//tags admins
+		admins := []string{"Inara", "Paula", "Princeso", "Fábio", "Julie Ann"}
+		msgCh <- message{
+			msgType:  warningMsg,
+			admins:   admins,
+			message:  "This kind of message is not allowed on this group",
+			chatName: chatName,
 		}
 	}
 }
@@ -128,10 +157,18 @@ func sendScheduledMessage(page *rod.Page, msgCh chan message, mutex *sync.Mutex)
 }
 
 func sendUpcomingEvents(page *rod.Page, msgCh chan message, mutex *sync.Mutex) {
-	events, err := getUpcomingEvents()
+	tenkEvents, err := getUpcomingEvents("porto-10000-steps-walk")
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	j2fEvents, err := getUpcomingEvents("just-for-fun-in-portugal")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	events := append([]Edge{}, tenkEvents...)
+	events = append(events, j2fEvents...)
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -175,10 +212,18 @@ func onboardingTrigger(msgCh chan message, mutex *sync.Mutex, messages rod.Eleme
 		if strings.Contains(text, "/calendar") && !strings.Contains(text, "tail-in") && !strings.Contains(text, "check upcoming walks sending a message with") && !mapText[text] {
 			// send the message
 			log.Println("text:", text)
-			events, err := getUpcomingEvents()
+			tenkEvents, err := getUpcomingEvents("porto-10000-steps-walk")
 			if err != nil {
 				log.Fatal(err)
 			}
+
+			j2fEvents, err := getUpcomingEvents("just-for-fun-in-portugal")
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			events := append([]Edge{}, tenkEvents...)
+			events = append(events, j2fEvents...)
 
 			if len(events) == 0 {
 				events = append(events, Edge{
@@ -208,6 +253,54 @@ func onboardingTrigger(msgCh chan message, mutex *sync.Mutex, messages rod.Eleme
 	}
 }
 
+func onboardingTrigger2(msgCh chan message, mutex *sync.Mutex, messages []string) {
+	mutex.Lock()
+	defer mutex.Unlock()
+	for _, msg := range messages {
+		if strings.Contains(msg, "/calendar") && !strings.Contains(msg, "check upcoming walks sending a message with") && !mapText[msg] {
+			// send the message
+			log.Println("text:", msg)
+			tenkEvents, err := getUpcomingEvents("porto-10000-steps-walk")
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			j2fEvents, err := getUpcomingEvents("just-for-fun-in-portugal")
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			events := append([]Edge{}, tenkEvents...)
+			events = append(events, j2fEvents...)
+
+			if len(events) == 0 {
+				events = append(events, Edge{
+					Node: Node{
+						Title: "Sorry, No events yet, but stay tuned, we’ll be scheduling some soon!",
+					},
+				})
+			}
+
+			var wg sync.WaitGroup
+			wg.Add(len(events))
+
+			for _, event := range events {
+				go func(e Edge) {
+					defer wg.Done()
+					msgCh <- message{
+						msgType:  proposeMsg,
+						message:  e.Node.Title,
+						link:     e.Node.EventURL,
+						chatName: mainGroup,
+					}
+				}(event)
+			}
+			wg.Wait()
+			mapText[msg] = true
+		}
+	}
+}
+
 func sendMessage(page *rod.Page, msgCh chan message, mutex *sync.Mutex) {
 	for {
 		select {
@@ -226,7 +319,7 @@ func sendMessage(page *rod.Page, msgCh chan message, mutex *sync.Mutex) {
 				case welcomeMsg:
 					inputBox := page.MustElement(`div[contenteditable="true"][data-tab="10"]`)
 					// Simulate a mention
-					if msg.chatName == mainGroup {
+					if msg.chatName != PortugueseGroup {
 						inputBox.MustInput("Hi ")
 					}
 					err = page.Keyboard.Type('@')
@@ -293,5 +386,50 @@ func sendMessage(page *rod.Page, msgCh chan message, mutex *sync.Mutex) {
 			}
 		default:
 		}
+	}
+}
+
+func healthCheckLoop(page *rod.Page) {
+	for {
+		time.Sleep(50 * time.Second)
+
+		// Detect the “Something went wrong” message
+		hasError := false
+		err := rod.Try(func() {
+			hasError = page.MustEval(`() => {
+				const els = Array.from(document.querySelectorAll("div"));
+				return els.some(e => e.innerText && e.innerText.includes("Something went wrong"));
+			}`).Bool()
+		})
+		if err != nil {
+			log.Printf("Page evaluation error (possibly disconnected): %v", err)
+			hasError = true
+		}
+
+		if hasError {
+			log.Println("⚠️ Detected WhatsApp error screen — refreshing...")
+			page.MustReload()
+			page.MustWaitLoad()
+			time.Sleep(10 * time.Second)
+			log.Println("🔄 Page reloaded successfully.")
+			continue
+		}
+
+		// Optional: check sidebar presence (chat list)
+		sidebarVisible := false
+		_ = rod.Try(func() {
+			sidebarVisible = page.MustEval(`() => !!document.querySelector("#side")`).Bool()
+		})
+
+		if !sidebarVisible {
+			log.Println("⚠️ Sidebar not found — reloading page...")
+			page.MustReload()
+			page.MustWaitLoad()
+			time.Sleep(10 * time.Second)
+			log.Println("🔄 Page reloaded after sidebar check.")
+			continue
+		}
+
+		log.Println("✅ WhatsApp Web is healthy.")
 	}
 }

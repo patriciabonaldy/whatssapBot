@@ -6,9 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/robfig/cron/v3"
-
 	"github.com/go-rod/rod"
+	"github.com/robfig/cron/v3"
 )
 
 func main() {
@@ -38,15 +37,16 @@ func main() {
 	var mutex = &sync.Mutex{}
 
 	msgCh := make(chan message, 10)
+	go healthCheckLoop(page)
 	// send the message
 	go sendMessage(page, msgCh, mutex)
-	go checkChannel(page, mainGroup, msgCh, mutex, 30*time.Second)
-	go checkChannel(page, PortugueseGroup, msgCh, mutex, 1*time.Minute)
-	go checkChannel(page, OtherEventsGroup, msgCh, mutex, 1*time.Minute)
-
+	go run(30*time.Second, checkChannel, page, mainGroup, msgCh, mutex)
+	go run(60*time.Second, checkChannel, page, PortugueseGroup, msgCh, mutex)
+	go run(60*time.Second, checkChannel, page, OtherEventsGroup, msgCh, mutex)
+	//go sendUpcomingEvents(page, msgCh, mutex)
 	c := cron.New()
 	// Every Monday at 12:00 PM
-	_, err = c.AddFunc("43 10 * * 1", func() {
+	_, err = c.AddFunc("42 16 * * 1", func() {
 		sendScheduledMessage(page, msgCh, mutex)
 	})
 	if err != nil {
@@ -54,7 +54,7 @@ func main() {
 	}
 
 	// Every Friday at 12:00 PM we send the upcoming events
-	_, err = c.AddFunc("40 17 * * 5", func() {
+	_, err = c.AddFunc("40 13 * * 5", func() {
 		sendUpcomingEvents(page, msgCh, mutex)
 	})
 	if err != nil {

@@ -59,7 +59,8 @@ func openChat(page *rod.Page, chatName string) {
 
 func openCommunityGroup(page *rod.Page) {
 	// Click on the community menu button
-	page.MustElement(`button[title="Subgroup switcher"]`).MustClick()
+	page.MustElement(`button[aria-label="Subgroup switcher"]`).MustClick()
+	//page.MustElement(`button[title="Subgroup switcher"]`).MustClick()
 	time.Sleep(1 * time.Second)
 
 	btn := page.MustElement("div._ak8o")
@@ -74,21 +75,15 @@ func getAnnouncements(params ...any) any {
 	if len(announcements) == 0 {
 		return nil
 	}
-	if len(announcements) >= 3 {
-		announcements = announcements[:3]
-	}
 
 	return listenToAnnouncements(announcements)
 }
 
 func getMessages(params ...any) any {
 	page := params[0].(*rod.Page)
-	messages := page.MustElements("div._amk4.false._amkd._amk5")
+	messages := page.MustElements("div._amk4.false._amkd")
 	if len(messages) == 0 {
 		return nil
-	}
-	if len(messages) >= 10 {
-		messages = messages[:10]
 	}
 
 	return messages

@@ -6,11 +6,12 @@ import (
 	"io"
 	"net/http"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 )
 
-func getUpcomingEvents() ([]Edge, error) {
+func getUpcomingEvents(groupName string) ([]Edge, error) {
 	url := "https://www.meetup.com/gql2"
 	today := time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
 
@@ -20,7 +21,7 @@ func getUpcomingEvents() ([]Edge, error) {
 	payload := strings.NewReader(fmt.Sprintf(`{
     "operationName": "getUpcomingGroupEvents",
     "variables": {
-        "urlname": "porto-10000-steps-walk",
+        "urlname": "%s",
         "afterDateTime": "%s"
     },
     "extensions": {
@@ -28,7 +29,7 @@ func getUpcomingEvents() ([]Edge, error) {
             "version": 1,
             "sha256Hash": "%s"
         }
-    }}`, today, meetupHash))
+    }}`, groupName, today, meetupHash))
 
 	client := &http.Client{}
 	req, err := http.NewRequest(http.MethodPost, url, payload)
@@ -36,10 +37,11 @@ func getUpcomingEvents() ([]Edge, error) {
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Add("accept", "*/*")
 	req.Header.Add("content-type", "application/json")
 	req.Header.Add("referer", "https://www.meetup.com/porto-10000-steps-walk/events/")
-	req.Header.Add("x-meetup-view-id", "0421dd36-fe26-46cf-91f8-69fe8d4465d9")
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36")
+	req.Header.Add("Cookie", "MEETUP_BROWSER_ID=id=65a9af42-a7e7-4c26-abd4-c252a261fe60; MEETUP_TRACK=id=146a4ad6-69f2-4620-b113-d3537506613a; SIFT_SESSION_ID=ffd37912-b21c-495f-aea6-1ffda73c8bf0")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36'")
 
 	res, err := client.Do(req)
 	if err != nil {
@@ -73,11 +75,18 @@ func getUpcomingEvents() ([]Edge, error) {
 		}
 
 		date := event.Node.DateTime
-		if !date.After(time.Now().UTC()) {
+		if !date.After(time.Now().UTC()) || event.Node.EndTime.After(time.Now().AddDate(0, 0, 15).UTC()) {
 			continue
 		}
 
 		events = append(events, event)
+	}
+
+	sort.Slice(events, func(i, j int) bool {
+		return events[i].Node.EndTime.Before(events[j].Node.EndTime)
+	})
+	if len(events) > 1 {
+		return []Edge{events[0]}, nil
 	}
 
 	return events, nil
